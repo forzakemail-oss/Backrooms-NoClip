@@ -26,6 +26,10 @@ let renderer = null;
 let controls = null;
 let clock = null;
 let playerObject = null;
+let postScene = null;
+let postCamera = null;
+let postMaterial = null;
+let renderTarget = null;
 
 try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -34,6 +38,7 @@ try {
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
+    renderer.physicallyCorrectLights = true;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.setClearColor(new THREE.Color(0x090708));
@@ -246,6 +251,31 @@ function createFloorTexture(color) {
     return texture;
 }
 
+function createBumpTexture(size = 512, strength = 0.8) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, size, size);
+
+    for (let i = 0; i < 8000; i++) {
+        const alpha = Math.random() * 0.16;
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const radius = Math.random() * 1.6;
+        ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(2.6, 2.6);
+    texture.needsUpdate = true;
+    return texture;
+}
+
 function createWallTexture(base = '#1d1814') {
     const canvas = document.createElement('canvas');
     const size = 1024;
@@ -254,18 +284,24 @@ function createWallTexture(base = '#1d1814') {
     ctx.fillStyle = base;
     ctx.fillRect(0, 0, size, size);
 
-    for (let i = 0; i < 2400; i++) {
+    const gradient = ctx.createRadialGradient(size * 0.3, size * 0.3, size * 0.08, size * 0.65, size * 0.65, size * 0.9);
+    gradient.addColorStop(0, 'rgba(255,255,255,0.06)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    for (let i = 0; i < 2800; i++) {
         ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.03})`;
         ctx.fillRect(Math.random() * size, Math.random() * size, 1, 1);
     }
 
-    for (let i = 0; i < 30; i++) {
-        ctx.strokeStyle = `rgba(90,80,75,${0.03 + Math.random() * 0.05})`;
-        ctx.lineWidth = 1 + Math.random() * 1.5;
+    for (let i = 0; i < 42; i++) {
+        ctx.strokeStyle = `rgba(60,45,40,${0.025 + Math.random() * 0.04})`;
+        ctx.lineWidth = 1 + Math.random() * 1.8;
         ctx.beginPath();
         const sx = Math.random() * size;
         ctx.moveTo(sx, 0);
-        ctx.lineTo(sx + (Math.random() - 0.5) * 100, size);
+        ctx.lineTo(sx + (Math.random() - 0.5) * 180, size);
         ctx.stroke();
     }
 
@@ -273,7 +309,30 @@ function createWallTexture(base = '#1d1814') {
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(3.25, 3.25);
     texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    texture.needsUpdate = true;
     return texture;
+}
+
+function createDebrisPile(depth = -10, width = 2.4, count = 6) {
+    const group = new THREE.Group();
+    for (let i = 0; i < count; i++) {
+        const plank = new THREE.Mesh(
+            new THREE.BoxGeometry(0.14 + Math.random() * 0.22, 0.04 + Math.random() * 0.06, 0.64 + Math.random() * 0.9),
+            new THREE.MeshStandardMaterial({
+                color: 0x1f1713,
+                roughness: 0.76,
+                metalness: 0.04,
+                emissive: 0x090605,
+                emissiveIntensity: 0.03,
+            })
+        );
+        plank.position.set((Math.random() - 0.5) * width, 0.04 + i * 0.01, depth - Math.random() * 1.4);
+        plank.rotation.set(Math.random() * 0.18, Math.random() * Math.PI, Math.random() * 0.14);
+        plank.receiveShadow = true;
+        plank.castShadow = true;
+        group.add(plank);
+    }
+    return group;
 }
 
 function createLeakMaterial() {
@@ -290,26 +349,35 @@ function buildCorridor(levelIndex) {
     const group = new THREE.Group();
     const config = levelConfig[levelIndex];
 
+    const floorBump = createBumpTexture(1024);
+    const wallBump = createBumpTexture(1024);
+    const ceilingNoise = createNoiseTexture(512, 512, '#121012');
+
     const floorMat = new THREE.MeshStandardMaterial({
         map: createFloorTexture(`#${config.floorColor.toString(16)}`),
+        bumpMap: floorBump,
+        bumpScale: 0.05,
         roughness: 0.86,
         metalness: 0.08,
-        envMapIntensity: 0.14,
-        displacementMap: createFloorTexture(`#${config.floorColor.toString(16)}`),
-        displacementScale: 0.01,
+        envMapIntensity: 0.16,
+        roughnessMap: createFloorTexture(`#${config.floorColor.toString(16)}`),
     });
     const wallMat = new THREE.MeshStandardMaterial({
         map: createWallTexture('#181414'),
-        roughness: 0.86,
+        bumpMap: wallBump,
+        bumpScale: 0.06,
+        roughness: 0.88,
         metalness: 0.06,
         emissive: new THREE.Color(0x070605),
         emissiveIntensity: 0.12,
         envMapIntensity: 0.12,
     });
     const ceilingMat = new THREE.MeshStandardMaterial({
-        color: 0x111115,
-        roughness: 0.9,
-        metalness: 0.03,
+        map: ceilingNoise,
+        bumpMap: ceilingNoise,
+        bumpScale: 0.025,
+        roughness: 0.92,
+        metalness: 0.02,
     });
 
     const corridorLength = 52;
@@ -397,6 +465,14 @@ function buildCorridor(levelIndex) {
         pipe2.position.x = -corridorWidth / 2 + 0.5;
         group.add(pipe2);
     }
+
+    const debris1 = createDebrisPile(-9, corridorWidth * 0.72, 4);
+    debris1.position.set(-2.2, 0, -8.8);
+    group.add(debris1);
+
+    const debris2 = createDebrisPile(-22, corridorWidth * 0.9, 5);
+    debris2.position.set(2.0, 0, -17.4);
+    group.add(debris2);
 
     const haze = new THREE.PointLight(config.ambience, 0.26, 40, 2);
     haze.position.set(0, corridorHeight - 0.1, -12);
@@ -815,6 +891,12 @@ function onWindowResize() {
     camera.updateProjectionMatrix();
     if (renderer) {
         renderer.setSize(window.innerWidth, window.innerHeight);
+        if (renderTarget) {
+            renderTarget.setSize(window.innerWidth, window.innerHeight);
+        }
+        if (postMaterial) {
+            postMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+        }
     }
 }
 
@@ -928,7 +1010,63 @@ function initScene() {
     environment.position.set(0, 1.5, -16);
     scene.add(environment);
 
+    initPostProcessing();
     setupLevel(0);
+}
+
+function initPostProcessing() {
+    if (!renderer) return;
+
+    renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+        format: THREE.RGBAFormat,
+        encoding: THREE.sRGBEncoding,
+        depthBuffer: true,
+    });
+
+    postScene = new THREE.Scene();
+    postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    postMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            tDiffuse: { value: null },
+            time: { value: 0 },
+            resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+        },
+        vertexShader: `varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `uniform sampler2D tDiffuse;
+            uniform float time;
+            varying vec2 vUv;
+            float rand(vec2 co) {
+                return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+            }
+            void main() {
+                vec2 uv = vUv;
+                float noise = rand(uv * time * 10.0);
+                uv.x += (noise - 0.5) * 0.0012;
+                vec3 color = texture2D(tDiffuse, uv).rgb;
+                float vignette = smoothstep(0.95, 0.3, distance(uv, vec2(0.5)));
+                vec3 shifted;
+                shifted.r = texture2D(tDiffuse, uv + vec2(0.0014, 0.0)).r;
+                shifted.g = texture2D(tDiffuse, uv).g;
+                shifted.b = texture2D(tDiffuse, uv - vec2(0.0011, 0.0)).b;
+                vec3 finalColor = mix(color, shifted, 0.16);
+                finalColor *= 1.0 - vignette * 0.31;
+                finalColor = pow(finalColor, vec3(0.95));
+                float grain = rand(uv * time * 100.0) * 0.02;
+                finalColor += grain;
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `,
+        depthTest: false,
+        depthWrite: false,
+    });
+
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMaterial);
+    postScene.add(quad);
 }
 
 function animate() {
@@ -938,7 +1076,16 @@ function animate() {
     else if (state.mode === 'playing') updateGame(dt);
     updateHud();
     if (renderer) {
-        renderer.render(scene, camera);
+        if (renderTarget && postMaterial && postScene && postCamera) {
+            renderer.setRenderTarget(renderTarget);
+            renderer.render(scene, camera);
+            renderer.setRenderTarget(null);
+            postMaterial.uniforms.tDiffuse.value = renderTarget.texture;
+            postMaterial.uniforms.time.value += dt * 1.4;
+            renderer.render(postScene, postCamera);
+        } else {
+            renderer.render(scene, camera);
+        }
     }
     requestAnimationFrame(animate);
 }
