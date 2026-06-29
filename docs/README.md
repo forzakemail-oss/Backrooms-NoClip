@@ -3,13 +3,11 @@
 A browser-based Backrooms prototype with cinematic intro, immersive 3D corridors, and GitHub Pages support.
 
 ## Play locally
-Open `docs/index.html` in your browser.
+Open [index.html](index.html) in a browser, or serve this folder through a local HTTP server for the complete experience.
 
 ## GitHub Pages
-1. Enable GitHub Pages in repository settings.
-2. Select the `main` branch and folder `docs`.
-3. Visit the published URL once the site deploys.
+This folder is the publish source for GitHub Pages. The repository includes a workflow that deploys it automatically from GitHub Actions.
 
 ## Notes
-- `docs/` contains the playable site files.
-- `game.js` uses Three.js for a first-person Backrooms experience.
+- This folder contains the playable site files.
+- The experience is preserved from the main project entry points and is ready to be hosted from GitHub Pages.

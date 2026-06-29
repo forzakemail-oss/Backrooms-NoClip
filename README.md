@@ -1,15 +1,19 @@
 # Backrooms-NoClip
 
-A browser-based Backrooms prototype with cinematic intro, immersive 3D corridors, and GitHub Pages support.
+A browser-based Backrooms prototype with a cinematic intro, immersive 3D corridors, and a GitHub Pages deployment path.
 
 ## Play locally
-Open `docs/index.html` in your browser.
+Open [docs/index.html](docs/index.html) in a browser, or serve the repository over a local HTTP server for the full experience.
 
 ## GitHub Pages
-1. Enable GitHub Pages in repository settings.
-2. Select the `main` branch and folder `docs`.
-3. Visit the published URL once the site deploys.
+The site is designed to publish from the [docs](docs) directory.
+
+1. Push this repository to GitHub.
+2. Open the repository settings and enable GitHub Pages.
+3. Choose the GitHub Actions deployment method if prompted.
+4. The included workflow will publish the site automatically from the docs folder.
 
 ## Notes
-- `docs/` contains the playable site files.
-- `game.js` uses Three.js for a first-person Backrooms experience.
+- [docs](docs) contains the playable site files.
+- [game.js](game.js) uses Three.js for the first-person Backrooms experience.
+- The docs version preserves the same gameplay flow and atmosphere as the main project entry point.
