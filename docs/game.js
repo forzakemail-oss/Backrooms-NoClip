@@ -25,7 +25,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 
-const controls = new PointerLockControls(camera, document.body);
+const controls = new THREE.PointerLockControls(camera, document.body);
 const clock = new THREE.Clock();
 
 const audioState = {
