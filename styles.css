@@ -47,9 +47,53 @@ button:hover {
   z-index: 6;
   background: radial-gradient(circle at center, transparent 42%, rgba(10, 8, 8, 0.44) 100%);
   mix-blend-mode: multiply;
+  filter: saturate(0.96) contrast(1.04);
 }
 
-#horror-overlay::before {
+#glitch-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 7;
+  opacity: 0.08;
+  background: repeating-linear-gradient(transparent, transparent 2px, rgba(255,255,255,0.02) 2px, rgba(255,255,255,0.02) 3px),
+              radial-gradient(circle at 20% 15%, rgba(255,255,255,0.035), transparent 18%),
+              radial-gradient(circle at 78% 28%, rgba(255,255,255,0.022), transparent 12%);
+  mix-blend-mode: screen;
+  animation: glitchShake 6.2s infinite linear;
+  transform: translate3d(0,0,0);
+  will-change: opacity, transform, background-position;
+}
+
+#glitch-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, transparent 20%, transparent 82%, rgba(255,255,255,0.03) 100%);
+  opacity: 0.14;
+  pointer-events: none;
+}
+
+@keyframes glitchShake {
+  0% { transform: translate(0, 0); opacity: 0.075; }
+  12% { transform: translate(1px, -1px); opacity: 0.085; }
+  21% { transform: translate(-1px, 1px); opacity: 0.073; }
+  31% { transform: translate(0, 0); opacity: 0.08; }
+  56% { transform: translate(1px, 0); opacity: 0.09; }
+  68% { transform: translate(-1px, -1px); opacity: 0.078; }
+  79% { transform: translate(0, 1px); opacity: 0.083; }
+  100% { transform: translate(0, 0); opacity: 0.075; }
+}
+
+#ui-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  pointer-events: none;
+  z-index: 4;
+}
   content: '';
   position: absolute;
   inset: 0;
@@ -119,6 +163,15 @@ button:hover {
   padding: 1.5rem;
   pointer-events: none;
   z-index: 4;
+}
+
+.panel {
+  backdrop-filter: blur(28px);
+  background: rgba(8, 8, 10, 0.94);
+}
+
+#horror-overlay {
+  background: radial-gradient(circle at center, transparent 40%, rgba(8, 6, 6, 0.52) 100%);
 }
 
 .panel {

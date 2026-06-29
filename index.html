@@ -15,6 +15,10 @@
       <div class="control-group"><span class="control-key">S</span><span class="control-label">Back</span></div>
       <div class="control-group"><span class="control-key">A</span><span class="control-label">Left</span></div>
       <div class="control-group"><span class="control-key">D</span><span class="control-label">Right</span></div>
+      <div class="control-group"><span class="control-key">Shift</span><span class="control-label">Sprint</span></div>
+      <div class="control-group"><span class="control-key">Ctrl</span><span class="control-label">Crouch</span></div>
+      <div class="control-group"><span class="control-key">C</span><span class="control-label">Crawl</span></div>
+      <div class="control-group"><span class="control-key">Space</span><span class="control-label">Jump</span></div>
       <div class="control-group"><span class="control-key">Mouse</span><span class="control-label">Look</span></div>
       <div class="control-group"><span class="control-key">Click</span><span class="control-label">Lock / unlock</span></div>
     </aside>
@@ -31,7 +35,7 @@
         <div class="panel-title">Backrooms NoClip</div>
         <p class="panel-copy">You and your friends push into a forgotten level of a building. Lean on the wall, and the breach opens.</p>
         <button id="lean-btn">Lean on the wall</button>
-        <p class="hint">A cinematic sequence plays next, then Level 0 begins. Use WASD and mouse to move.</p>
+        <p class="hint">A cinematic sequence plays next, then Level 0 begins. Use WASD, Shift, C, Ctrl and Space to move.</p>
       </section>
 
       <section class="panel hidden" id="cutscene-screen">
@@ -60,6 +64,7 @@
     </div>
 
     <div id="horror-overlay"></div>
+    <div id="glitch-overlay"></div>
   </div>
 
   <script type="module" src="game.js"></script>

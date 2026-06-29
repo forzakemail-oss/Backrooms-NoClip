@@ -128,6 +128,10 @@ const moveState = {
     backward: false,
     left: false,
     right: false,
+    sprint: false,
+    crouch: false,
+    crawl: false,
+    jump: false,
 };
 
 const playerState = {
@@ -135,6 +139,11 @@ const playerState = {
     target: new THREE.Vector3(),
     bobTime: 0,
     lastSpeed: 0,
+    verticalVelocity: 0,
+    jumpOffset: 0,
+    stanceHeight: 1.65,
+    targetHeight: 1.65,
+    onGround: true,
 };
 
 const corridorBounds = { x: 6.6, z: -42, zMax: 9 };
@@ -163,10 +172,20 @@ function createNoiseTexture(width = 512, height = 512, base = '#161412') {
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = base;
     ctx.fillRect(0, 0, width, height);
-    for (let i = 0; i < 8000; i++) {
-        const alpha = Math.random() * 0.16;
+
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, 'rgba(40, 35, 32, 0.06)');
+    gradient.addColorStop(1, 'rgba(12, 10, 12, 0.16)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    for (let i = 0; i < 10000; i++) {
+        const alpha = Math.random() * 0.14;
+        const radius = Math.random() * 2.4;
         ctx.fillStyle = `rgba(0,0,0,${alpha})`;
-        ctx.fillRect(Math.random() * width, Math.random() * height, 1, 1);
+        ctx.beginPath();
+        ctx.arc(Math.random() * width, Math.random() * height, radius, 0, Math.PI * 2);
+        ctx.fill();
     }
     return new THREE.CanvasTexture(canvas);
 }
@@ -194,20 +213,66 @@ function createFloorTexture(color) {
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, size, size);
-    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
-    for (let i = 0; i < 120; i++) {
+
+    ctx.strokeStyle = 'rgba(25,20,18,0.065)';
+    for (let i = 0; i < 140; i++) {
         ctx.beginPath();
-        ctx.moveTo(0, Math.random() * size);
-        ctx.lineTo(size, Math.random() * size);
+        const y = Math.random() * size;
+        ctx.moveTo(0, y);
+        ctx.lineTo(size, y + (Math.random() - 0.5) * 24);
         ctx.stroke();
     }
-    for (let i = 0; i < 1200; i++) {
+
+    for (let i = 0; i < 2800; i++) {
+        ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.022})`;
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        ctx.fillRect(x, y, 1 + Math.random() * 1.5, 1);
+    }
+
+    ctx.globalAlpha = 0.12;
+    for (let i = 0; i < 7; i++) {
+        ctx.fillStyle = `rgba(20,20,20,0.12)`;
+        const x = Math.random() * size * 0.7;
+        const y = Math.random() * size * 0.8;
+        ctx.fillRect(x, y, size * 0.3, size * 0.045 + Math.random() * 0.1 * size);
+    }
+    ctx.globalAlpha = 1;
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(4.2, 4.2);
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return texture;
+}
+
+function createWallTexture(base = '#1d1814') {
+    const canvas = document.createElement('canvas');
+    const size = 1024;
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, size, size);
+
+    for (let i = 0; i < 2400; i++) {
         ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.03})`;
         ctx.fillRect(Math.random() * size, Math.random() * size, 1, 1);
     }
+
+    for (let i = 0; i < 30; i++) {
+        ctx.strokeStyle = `rgba(90,80,75,${0.03 + Math.random() * 0.05})`;
+        ctx.lineWidth = 1 + Math.random() * 1.5;
+        ctx.beginPath();
+        const sx = Math.random() * size;
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx + (Math.random() - 0.5) * 100, size);
+        ctx.stroke();
+    }
+
     const texture = new THREE.CanvasTexture(canvas);
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(2.7, 2.7);
+    texture.repeat.set(3.25, 3.25);
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return texture;
 }
 
@@ -230,14 +295,16 @@ function buildCorridor(levelIndex) {
         roughness: 0.86,
         metalness: 0.08,
         envMapIntensity: 0.14,
+        displacementMap: createFloorTexture(`#${config.floorColor.toString(16)}`),
+        displacementScale: 0.01,
     });
     const wallMat = new THREE.MeshStandardMaterial({
-        map: createNoiseTexture(1024, 1024, '#1d1814'),
-        roughness: 0.92,
-        metalness: 0.04,
-        emissive: new THREE.Color(0x060403),
+        map: createWallTexture('#181414'),
+        roughness: 0.86,
+        metalness: 0.06,
+        emissive: new THREE.Color(0x070605),
         emissiveIntensity: 0.12,
-        envMapIntensity: 0.08,
+        envMapIntensity: 0.12,
     });
     const ceilingMat = new THREE.MeshStandardMaterial({
         color: 0x111115,
@@ -249,13 +316,14 @@ function buildCorridor(levelIndex) {
     const corridorWidth = 14;
     const corridorHeight = 4.8;
 
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(corridorWidth, 0.2, corridorLength), floorMat);
-    floor.position.set(0, -0.1, -corridorLength / 2 + 1.8);
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(corridorWidth, 0.22, corridorLength, 48, 1, 48), floorMat);
+    floor.position.set(0, -0.11, -corridorLength / 2 + 1.8);
     floor.receiveShadow = true;
     group.add(floor);
 
-    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(corridorWidth, 0.18, corridorLength), ceilingMat);
+    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(corridorWidth, 0.18, corridorLength, 12, 1, 64), ceilingMat);
     ceiling.position.set(0, corridorHeight, -corridorLength / 2 + 1.8);
+    ceiling.receiveShadow = true;
     group.add(ceiling);
 
     const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.18, corridorHeight, corridorLength), wallMat);
@@ -355,51 +423,76 @@ function buildCorridor(levelIndex) {
 }
 
 function createEntityMesh() {
-    const base = new THREE.Group();
-    const core = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.42, 1),
+    const entity = new THREE.Group();
+
+    const shell = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.78, 2),
         new THREE.MeshStandardMaterial({
-            color: 0x1b0000,
-            emissive: 0xff6a47,
-            emissiveIntensity: 1.12,
-            roughness: 0.18,
-            metalness: 0.42,
+            color: 0x080202,
+            emissive: 0x300000,
+            emissiveIntensity: 0.35,
+            roughness: 0.12,
+            metalness: 0.3,
+            transparent: true,
+            opacity: 0.86,
+            side: THREE.DoubleSide,
+        })
+    );
+    shell.castShadow = true;
+    shell.receiveShadow = true;
+    entity.add(shell);
+
+    const spikes = new THREE.Group();
+    for (let i = 0; i < 7; i++) {
+        const spike = new THREE.Mesh(
+            new THREE.ConeGeometry(0.08, 0.9, 8),
+            new THREE.MeshStandardMaterial({
+                color: 0x140909,
+                emissive: 0x4a0000,
+                emissiveIntensity: 0.18,
+                roughness: 0.16,
+                metalness: 0.15,
+            })
+        );
+        spike.position.set(0, 0, 0.3);
+        spike.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        spike.translateY(0.42);
+        spike.rotateX((Math.PI * 2 * i) / 7);
+        spike.castShadow = true;
+        spikes.add(spike);
+    }
+    entity.add(spikes);
+
+    const eye = new THREE.Mesh(
+        new THREE.SphereGeometry(0.24, 14, 14),
+        new THREE.MeshStandardMaterial({
+            color: 0x090000,
+            emissive: 0xff1200,
+            emissiveIntensity: 1.2,
+            roughness: 0.05,
+            metalness: 0.4,
             transparent: true,
             opacity: 0.92,
         })
     );
-    core.castShadow = true;
-    base.add(core);
+    eye.position.set(0, 0.18, 0.1);
+    eye.castShadow = true;
+    entity.add(eye);
 
-    const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.62, 0.08, 16, 60),
-        new THREE.MeshStandardMaterial({
-            color: 0xff8b6b,
-            emissive: 0xffab88,
-            emissiveIntensity: 0.76,
-            roughness: 0.25,
-            metalness: 0.35,
-            transparent: true,
-            opacity: 0.68,
-            side: THREE.DoubleSide,
-        })
-    );
-    ring.rotation.x = Math.PI / 2;
-    base.add(ring);
-
-    const glow = new THREE.Mesh(
-        new THREE.SphereGeometry(0.72, 12, 12),
+    const irisGlow = new THREE.Mesh(
+        new THREE.SphereGeometry(0.28, 12, 12),
         new THREE.MeshBasicMaterial({
-            color: 0xff7f54,
+            color: 0xff4f35,
             transparent: true,
-            opacity: 0.16,
+            opacity: 0.18,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
         })
     );
-    base.add(glow);
+    irisGlow.position.copy(eye.position);
+    entity.add(irisGlow);
 
-    return base;
+    return entity;
 }
 
 function createBarrier() {
@@ -546,29 +639,27 @@ function updateEntities(dt) {
         const toPlayer = new THREE.Vector3().subVectors(playerPosition, entity.mesh.position);
         const distance = toPlayer.length();
         const direction = toPlayer.setY(0).normalize();
-        const approachStrength = Math.max(0.2, Math.min(1.0, 1.6 - distance * 0.08));
+        const approachStrength = Math.max(0.25, Math.min(1.0, 1.7 - distance * 0.08));
         entity.mesh.position.addScaledVector(direction, entity.speed * approachStrength * dt);
         entity.group.position.copy(entity.mesh.position);
 
-        const breath = 0.22 + Math.sin((performance.now() * 0.0015) + index * 0.6) * 0.12;
-        const spin = performance.now() * 0.0007 + index * 0.23;
-        entity.group.rotation.set(spin, spin * 0.7, spin * 1.4);
+        const pulse = 0.24 + Math.sin((performance.now() * 0.0022) + index * 0.72) * 0.14;
+        const jitter = Math.sin((performance.now() * 0.0031) + index * 1.4) * 0.06;
+        const chaos = performance.now() * 0.0009 + index * 0.4;
+        entity.group.rotation.set(chaos, chaos * 0.82, chaos * 1.1);
 
-        entity.mesh.children?.forEach((part, partIndex) => {
-            part.rotation.x = performance.now() * 0.00035 * (1 + partIndex * 0.18);
-        });
-
-        entity.mesh.traverse(node => {
-            if (node.material && node.material.emissive) {
-                node.material.emissiveIntensity = breath + Math.min(0.63, (1 / Math.max(distance, 0.1)) * 0.12);
+        entity.group.children.forEach((part, partIndex) => {
+            const flicker = 0.6 + Math.sin(performance.now() * 0.0017 + partIndex * 0.7) * 0.14;
+            if (part.material && part.material.emissive) {
+                part.material.emissiveIntensity = flicker + Math.min(0.9, 0.28 / Math.max(distance, 0.1));
             }
         });
 
-        const sway = Math.sin(performance.now() * 0.0012 + entity.phase) * entity.drift * 0.6;
+        const sway = Math.sin(performance.now() * 0.0012 + entity.phase) * entity.drift * 0.8;
         entity.mesh.position.x += sway * dt;
-        entity.mesh.position.y = 1.2 + Math.sin(performance.now() * 0.002 + index) * 0.08;
+        entity.mesh.position.y = 1.1 + Math.sin(performance.now() * 0.0028 + index) * 0.12;
 
-        if (distance < 1.1) {
+        if (distance < 1.3) {
             state.dead = true;
             state.effectStrength = 1.0;
         }
@@ -634,25 +725,24 @@ function updateCutscene(dt) {
 
 function movePlayer(dt) {
     if (!playerObject) return;
+
     const inputDirection = new THREE.Vector3(
         (moveState.right ? 1 : 0) - (moveState.left ? 1 : 0),
         0,
         (moveState.backward ? 1 : 0) - (moveState.forward ? 1 : 0)
     );
+    if (inputDirection.lengthSq() > 0) inputDirection.normalize();
 
-    const maxSpeed = 4.5 + state.level * 0.22;
-    const acceleration = 35.0;
-    const deceleration = 28.0;
+    const baseSpeed = 4.4 + state.level * 0.26;
+    const sprintMultiplier = moveState.sprint && !moveState.crouch && !moveState.crawl ? 1.55 : 1.0;
+    const crouchMultiplier = moveState.crouch ? 0.52 : 1.0;
+    const crawlMultiplier = moveState.crawl ? 0.38 : 1.0;
+    const targetSpeed = baseSpeed * sprintMultiplier * crouchMultiplier * crawlMultiplier;
 
-    if (inputDirection.lengthSq() > 0) {
-        inputDirection.normalize();
-        playerState.target.copy(inputDirection).multiplyScalar(maxSpeed);
-    } else {
-        playerState.target.set(0, 0, 0);
-    }
-
+    playerState.target.copy(inputDirection).multiplyScalar(targetSpeed);
     const deltaVelocity = playerState.target.clone().sub(playerState.velocity);
-    const damping = inputDirection.lengthSq() > 0 ? acceleration : deceleration;
+    const acceleration = 26.0;
+    const damping = moveState.forward || moveState.backward || moveState.left || moveState.right ? acceleration : 18.0;
     const velocityChange = deltaVelocity.multiplyScalar(Math.min(1, damping * dt / Math.max(deltaVelocity.length(), 1e-6)));
     playerState.velocity.add(velocityChange);
 
@@ -661,14 +751,31 @@ function movePlayer(dt) {
         controls.moveForward(playerState.velocity.z * dt);
     }
 
-    const speed = playerState.velocity.length();
-    playerState.bobTime += speed * dt * 2.2;
-    playerState.lastSpeed = speed;
-    const bobAmount = Math.sin(playerState.bobTime * 2.3) * 0.022 * Math.min(1, speed / maxSpeed);
+    const jumpSpeed = 5.2;
+    const gravity = -18.0;
+    if (playerState.onGround && moveState.jump && !moveState.crouch && !moveState.crawl) {
+        playerState.verticalVelocity = jumpSpeed;
+        playerState.onGround = false;
+    }
+
+    playerState.verticalVelocity += gravity * dt;
+    playerState.jumpOffset += playerState.verticalVelocity * dt;
+    if (playerState.jumpOffset <= 0) {
+        playerState.jumpOffset = 0;
+        playerState.verticalVelocity = 0;
+        playerState.onGround = true;
+    }
+
+    const targetHeight = moveState.crawl ? 0.95 : moveState.crouch ? 1.1 : 1.65;
+    playerState.targetHeight += (targetHeight - playerState.targetHeight) * Math.min(1, dt * 8.5);
+    camera.position.y = playerState.targetHeight + playerState.jumpOffset + Math.sin(playerState.bobTime * 2.2) * 0.02;
+
+    const movementMagnitude = playerState.velocity.length();
+    playerState.bobTime += movementMagnitude * dt * 2.4;
+    const bobAmount = Math.sin(playerState.bobTime * 2.2) * 0.028 * Math.min(1, movementMagnitude / baseSpeed);
     const leanAmount = (moveState.left ? 1 : 0) - (moveState.right ? 1 : 0);
-    camera.position.y = 1.65 + Math.abs(bobAmount) * 0.42;
-    camera.position.x = leanAmount * 0.07 + Math.sin(playerState.bobTime * 1.9) * 0.007;
-    camera.rotation.z = leanAmount * 0.018;
+    camera.position.x = leanAmount * 0.08 + Math.sin(playerState.bobTime * 1.9) * 0.005;
+    camera.rotation.z = leanAmount * 0.022;
     camera.rotation.x = Math.sin(playerState.bobTime * 1.4) * 0.003;
 }
 
@@ -742,6 +849,15 @@ function bindEvents() {
             case 'KeyS': moveState.backward = true; break;
             case 'KeyA': moveState.left = true; break;
             case 'KeyD': moveState.right = true; break;
+            case 'ShiftLeft': moveState.sprint = true; break;
+            case 'ControlLeft': moveState.crouch = true; moveState.crawl = false; break;
+            case 'KeyC':
+                if (!event.repeat) {
+                    moveState.crawl = !moveState.crawl;
+                    if (moveState.crawl) moveState.crouch = false;
+                }
+                break;
+            case 'Space': moveState.jump = true; break;
             case 'Enter': if (state.mode === 'menu') startBtn.click(); break;
         }
     });
@@ -752,6 +868,9 @@ function bindEvents() {
             case 'KeyS': moveState.backward = false; break;
             case 'KeyA': moveState.left = false; break;
             case 'KeyD': moveState.right = false; break;
+            case 'ShiftLeft': moveState.sprint = false; break;
+            case 'ControlLeft': moveState.crouch = false; break;
+            case 'Space': moveState.jump = false; break;
         }
     });
 
