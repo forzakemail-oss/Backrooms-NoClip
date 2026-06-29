@@ -22,17 +22,31 @@ const loadingScreen = document.getElementById('loading-screen');
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 140);
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+let renderer = null;
+let controls = null;
+let clock = null;
 
-const controls = new PointerLockControls(camera, document.body);
-const clock = new THREE.Clock();
+try {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+} catch (error) {
+    console.error('WebGL init failed', error);
+    renderer = null;
+}
+
+if (renderer) {
+    controls = new PointerLockControls(camera, document.body);
+    clock = new THREE.Clock();
+} else {
+    controls = null;
+    clock = new THREE.Clock();
+}
 
 const audioState = {
     initialized: false,
@@ -590,25 +604,27 @@ function updateGame(dt) {
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    if (renderer) {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
 }
 
 function bindEvents() {
-    leanBtn.addEventListener('click', startCutscene);
-    startBtn.addEventListener('click', () => {
+    if (leanBtn) leanBtn.addEventListener('click', startCutscene);
+    if (startBtn) startBtn.addEventListener('click', () => {
         initAudio();
         state.mode = 'playing';
         showPanel('playing');
-        if (!controls.isLocked) controls.lock();
+        if (controls && !controls.isLocked) controls.lock();
         state.timer = 0;
         state.dead = false;
     });
-    restartBtn.addEventListener('click', () => {
+    if (restartBtn) restartBtn.addEventListener('click', () => {
         state.mode = 'intro';
         showPanel('intro');
         if (controls.isLocked) controls.unlock();
     });
-    retryBtn.addEventListener('click', () => {
+    if (retryBtn) retryBtn.addEventListener('click', () => {
         state.level = 0;
         state.escaped = false;
         state.dead = false;
@@ -637,16 +653,18 @@ function bindEvents() {
         }
     });
 
-    controls.addEventListener('lock', () => {
-        hud.classList.remove('hidden');
-    });
+    if (controls) {
+        controls.addEventListener('lock', () => {
+            hud.classList.remove('hidden');
+        });
 
-    controls.addEventListener('unlock', () => {
-        if (state.mode === 'playing') {
-            state.mode = 'menu';
-            goToMenu();
-        }
-    });
+        controls.addEventListener('unlock', () => {
+            if (state.mode === 'playing') {
+                state.mode = 'menu';
+                goToMenu();
+            }
+        });
+    }
 
     window.addEventListener('resize', onWindowResize);
     window.addEventListener('pointerdown', () => {
@@ -680,11 +698,14 @@ function initScene() {
 }
 
 function animate() {
+    if (!clock) return;
     const dt = Math.min(clock.getDelta(), 0.05);
     if (state.mode === 'cutscene') updateCutscene(dt);
     else if (state.mode === 'playing') updateGame(dt);
     updateHud();
-    renderer.render(scene, camera);
+    if (renderer) {
+        renderer.render(scene, camera);
+    }
     requestAnimationFrame(animate);
 }
 
