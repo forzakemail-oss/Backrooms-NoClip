@@ -25,16 +25,18 @@ const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerH
 let renderer = null;
 let controls = null;
 let clock = null;
+let playerObject = null;
 
 try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.08;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setClearColor(new THREE.Color(0x090708));
 } catch (error) {
     console.error('WebGL init failed', error);
     renderer = null;
@@ -43,6 +45,7 @@ try {
 if (renderer) {
     controls = new PointerLockControls(camera, document.body);
     clock = new THREE.Clock();
+    playerObject = controls.getObject();
 } else {
     controls = null;
     clock = new THREE.Clock();
@@ -125,6 +128,13 @@ const moveState = {
     backward: false,
     left: false,
     right: false,
+};
+
+const playerState = {
+    velocity: new THREE.Vector3(),
+    target: new THREE.Vector3(),
+    bobTime: 0,
+    lastSpeed: 0,
 };
 
 const corridorBounds = { x: 6.6, z: -42, zMax: 9 };
@@ -217,20 +227,22 @@ function buildCorridor(levelIndex) {
 
     const floorMat = new THREE.MeshStandardMaterial({
         map: createFloorTexture(`#${config.floorColor.toString(16)}`),
-        roughness: 0.92,
-        metalness: 0.04,
+        roughness: 0.86,
+        metalness: 0.08,
+        envMapIntensity: 0.14,
     });
     const wallMat = new THREE.MeshStandardMaterial({
         map: createNoiseTexture(1024, 1024, '#1d1814'),
-        roughness: 1.0,
-        metalness: 0,
-        emissive: new THREE.Color(0x040304),
-        emissiveIntensity: 0.07,
+        roughness: 0.92,
+        metalness: 0.04,
+        emissive: new THREE.Color(0x060403),
+        emissiveIntensity: 0.12,
+        envMapIntensity: 0.08,
     });
     const ceilingMat = new THREE.MeshStandardMaterial({
-        color: 0x0f0e10,
-        roughness: 0.98,
-        metalness: 0,
+        color: 0x111115,
+        roughness: 0.9,
+        metalness: 0.03,
     });
 
     const corridorLength = 52;
@@ -325,23 +337,69 @@ function buildCorridor(levelIndex) {
     const fill = new THREE.HemisphereLight(config.ambience, 0x071018, config.fillLight);
     group.add(fill);
 
+    const fogGlow = new THREE.Mesh(
+        new THREE.CylinderGeometry(corridorWidth * 0.9, corridorWidth * 0.9, 0.2, 24, 1, true),
+        new THREE.MeshBasicMaterial({
+            color: config.fogColor,
+            transparent: true,
+            opacity: 0.035,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+        })
+    );
+    fogGlow.position.set(0, corridorHeight * 0.44, -corridorLength / 2 + 1.8);
+    fogGlow.rotation.x = Math.PI / 2;
+    group.add(fogGlow);
+
     return group;
 }
 
 function createEntityMesh() {
-    const geometry = new THREE.IcosahedronGeometry(0.42, 1);
-    const material = new THREE.MeshStandardMaterial({
-        color: 0x0f0000,
-        emissive: 0xff3f32,
-        emissiveIntensity: 0.82,
-        roughness: 0.2,
-        metalness: 0.45,
-        transparent: true,
-        opacity: 0.92,
-    });
-    const entity = new THREE.Mesh(geometry, material);
-    entity.castShadow = true;
-    return entity;
+    const base = new THREE.Group();
+    const core = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.42, 1),
+        new THREE.MeshStandardMaterial({
+            color: 0x1b0000,
+            emissive: 0xff6a47,
+            emissiveIntensity: 1.12,
+            roughness: 0.18,
+            metalness: 0.42,
+            transparent: true,
+            opacity: 0.92,
+        })
+    );
+    core.castShadow = true;
+    base.add(core);
+
+    const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.62, 0.08, 16, 60),
+        new THREE.MeshStandardMaterial({
+            color: 0xff8b6b,
+            emissive: 0xffab88,
+            emissiveIntensity: 0.76,
+            roughness: 0.25,
+            metalness: 0.35,
+            transparent: true,
+            opacity: 0.68,
+            side: THREE.DoubleSide,
+        })
+    );
+    ring.rotation.x = Math.PI / 2;
+    base.add(ring);
+
+    const glow = new THREE.Mesh(
+        new THREE.SphereGeometry(0.72, 12, 12),
+        new THREE.MeshBasicMaterial({
+            color: 0xff7f54,
+            transparent: true,
+            opacity: 0.16,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+        })
+    );
+    base.add(glow);
+
+    return base;
 }
 
 function createBarrier() {
@@ -483,16 +541,34 @@ function spawnEntity() {
 }
 
 function updateEntities(dt) {
-    const playerPosition = controls.getObject().position;
+    const playerPosition = playerObject ? playerObject.position : new THREE.Vector3();
     state.entities.forEach((entity, index) => {
-        const direction = new THREE.Vector3().subVectors(playerPosition, entity.mesh.position).setY(0).normalize();
-        entity.mesh.position.addScaledVector(direction, entity.speed * dt);
+        const toPlayer = new THREE.Vector3().subVectors(playerPosition, entity.mesh.position);
+        const distance = toPlayer.length();
+        const direction = toPlayer.setY(0).normalize();
+        const approachStrength = Math.max(0.2, Math.min(1.0, 1.6 - distance * 0.08));
+        entity.mesh.position.addScaledVector(direction, entity.speed * approachStrength * dt);
         entity.group.position.copy(entity.mesh.position);
-        const pulse = 0.3 + Math.sin((performance.now() + index * 80) / 220) * 0.14;
-        entity.mesh.material.emissiveIntensity = pulse;
-        entity.mesh.rotation.y = performance.now() / 420 + index;
-        entity.mesh.position.x += Math.sin(performance.now() / 900 + entity.phase) * entity.drift * dt;
-        if (entity.mesh.position.distanceTo(playerPosition) < 1.0) {
+
+        const breath = 0.22 + Math.sin((performance.now() * 0.0015) + index * 0.6) * 0.12;
+        const spin = performance.now() * 0.0007 + index * 0.23;
+        entity.group.rotation.set(spin, spin * 0.7, spin * 1.4);
+
+        entity.mesh.children?.forEach((part, partIndex) => {
+            part.rotation.x = performance.now() * 0.00035 * (1 + partIndex * 0.18);
+        });
+
+        entity.mesh.traverse(node => {
+            if (node.material && node.material.emissive) {
+                node.material.emissiveIntensity = breath + Math.min(0.63, (1 / Math.max(distance, 0.1)) * 0.12);
+            }
+        });
+
+        const sway = Math.sin(performance.now() * 0.0012 + entity.phase) * entity.drift * 0.6;
+        entity.mesh.position.x += sway * dt;
+        entity.mesh.position.y = 1.2 + Math.sin(performance.now() * 0.002 + index) * 0.08;
+
+        if (distance < 1.1) {
             state.dead = true;
             state.effectStrength = 1.0;
         }
@@ -557,17 +633,43 @@ function updateCutscene(dt) {
 }
 
 function movePlayer(dt) {
-    const baseSpeed = 4.2 + state.level * 0.18;
-    const velocity = new THREE.Vector3();
-    if (moveState.forward) velocity.z -= 1;
-    if (moveState.backward) velocity.z += 1;
-    if (moveState.left) velocity.x -= 1;
-    if (moveState.right) velocity.x += 1;
-    if (velocity.lengthSq() > 0) {
-        velocity.normalize().multiplyScalar(baseSpeed * dt);
-        controls.moveRight(velocity.x);
-        controls.moveForward(velocity.z);
+    if (!playerObject) return;
+    const inputDirection = new THREE.Vector3(
+        (moveState.right ? 1 : 0) - (moveState.left ? 1 : 0),
+        0,
+        (moveState.backward ? 1 : 0) - (moveState.forward ? 1 : 0)
+    );
+
+    const maxSpeed = 4.5 + state.level * 0.22;
+    const acceleration = 35.0;
+    const deceleration = 28.0;
+
+    if (inputDirection.lengthSq() > 0) {
+        inputDirection.normalize();
+        playerState.target.copy(inputDirection).multiplyScalar(maxSpeed);
+    } else {
+        playerState.target.set(0, 0, 0);
     }
+
+    const deltaVelocity = playerState.target.clone().sub(playerState.velocity);
+    const damping = inputDirection.lengthSq() > 0 ? acceleration : deceleration;
+    const velocityChange = deltaVelocity.multiplyScalar(Math.min(1, damping * dt / Math.max(deltaVelocity.length(), 1e-6)));
+    playerState.velocity.add(velocityChange);
+
+    if (playerState.velocity.lengthSq() > 0.0001) {
+        controls.moveRight(playerState.velocity.x * dt);
+        controls.moveForward(playerState.velocity.z * dt);
+    }
+
+    const speed = playerState.velocity.length();
+    playerState.bobTime += speed * dt * 2.2;
+    playerState.lastSpeed = speed;
+    const bobAmount = Math.sin(playerState.bobTime * 2.3) * 0.022 * Math.min(1, speed / maxSpeed);
+    const leanAmount = (moveState.left ? 1 : 0) - (moveState.right ? 1 : 0);
+    camera.position.y = 1.65 + Math.abs(bobAmount) * 0.42;
+    camera.position.x = leanAmount * 0.07 + Math.sin(playerState.bobTime * 1.9) * 0.007;
+    camera.rotation.z = leanAmount * 0.018;
+    camera.rotation.x = Math.sin(playerState.bobTime * 1.4) * 0.003;
 }
 
 function updateGame(dt) {
@@ -673,26 +775,39 @@ function bindEvents() {
 }
 
 function initScene() {
-    scene.background = new THREE.Color(0x09080a);
-    scene.fog = new THREE.Fog(0x09080a, 8, 54);
+    scene.background = new THREE.Color(0x070506);
+    scene.fog = new THREE.Fog(0x070506, 6.4, 48);
     camera.position.set(0, 1.65, 5.4);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.12);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.08);
     scene.add(ambient);
-    const directional = new THREE.DirectionalLight(0xfff1d6, 0.22);
-    directional.position.set(0, 10, 5);
+
+    const directional = new THREE.DirectionalLight(0xfff5d8, 0.18);
+    directional.position.set(1.5, 9.2, 3.2);
     directional.castShadow = true;
     directional.shadow.camera.near = 1;
-    directional.shadow.camera.far = 50;
+    directional.shadow.camera.far = 70;
     directional.shadow.mapSize.set(2048, 2048);
     scene.add(directional);
 
-    const fill = new THREE.HemisphereLight(0x4a4c53, 0x08080a, 0.22);
+    const fill = new THREE.HemisphereLight(0x3a3d44, 0x060607, 0.34);
     scene.add(fill);
 
-    const backLight = new THREE.PointLight(0x2a1f1c, 0.12, 60, 2);
-    backLight.position.set(0, 3.2, 8);
+    const backLight = new THREE.PointLight(0x3c2a24, 0.14, 68, 2);
+    backLight.position.set(0, 3.5, 9);
     scene.add(backLight);
+
+    const environment = new THREE.Mesh(
+        new THREE.CylinderGeometry(50, 50, 64, 24, 1, true),
+        new THREE.MeshBasicMaterial({
+            color: 0x080707,
+            side: THREE.BackSide,
+            transparent: true,
+            opacity: 0.88,
+        })
+    );
+    environment.position.set(0, 1.5, -16);
+    scene.add(environment);
 
     setupLevel(0);
 }
