@@ -1,5 +1,5 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js';
-import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/controls/PointerLockControls.js';
+import * as THREE from './vendor/three.module.js';
+import { PointerLockControls } from './vendor/PointerLockControls.js';
 
 const canvas = document.getElementById('game-canvas');
 const introScreen = document.getElementById('intro-screen');
@@ -18,6 +18,7 @@ const endText = document.getElementById('end-text');
 const cutsceneText = document.getElementById('cutscene-text');
 const horrorOverlay = document.getElementById('horror-overlay');
 const hud = document.getElementById('hud');
+const loadingScreen = document.getElementById('loading-screen');
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 140);
@@ -119,6 +120,7 @@ function showPanel(panel) {
     cutsceneScreen.classList.toggle('hidden', panel !== 'cutscene');
     menuScreen.classList.toggle('hidden', panel !== 'menu');
     endScreen.classList.toggle('hidden', panel !== 'end');
+    loadingScreen.classList.toggle('hidden', panel !== 'loading');
     hud.classList.toggle('hidden', panel !== 'playing');
 }
 
@@ -687,8 +689,14 @@ function animate() {
 }
 
 window.addEventListener('load', () => {
-    initScene();
-    bindEvents();
-    showPanel('intro');
-    animate();
+    showPanel('loading');
+    try {
+        initScene();
+        bindEvents();
+        showPanel('intro');
+        animate();
+    } catch (error) {
+        console.error('Failed to initialize Backrooms NoClip', error);
+        showPanel('intro');
+    }
 });
