@@ -17,6 +17,7 @@ const endTitle = document.getElementById('end-title');
 const endText = document.getElementById('end-text');
 const cutsceneText = document.getElementById('cutscene-text');
 const horrorOverlay = document.getElementById('horror-overlay');
+const mobileControls = document.getElementById('mobile-controls');
 const hud = document.getElementById('hud');
 const loadingScreen = document.getElementById('loading-screen');
 
@@ -139,6 +140,15 @@ const moveState = {
     jump: false,
 };
 
+const deviceState = {
+    isTouchScreen: ('ontouchstart' in window) || navigator.maxTouchPoints > 1 || window.matchMedia('(pointer: coarse)').matches,
+    isChromebook: /CrOS/.test(navigator.userAgent),
+    mobileControls: false,
+    touchLookActive: false,
+    lastTouchX: 0,
+    lastTouchY: 0,
+};
+
 const playerState = {
     velocity: new THREE.Vector3(),
     target: new THREE.Vector3(),
@@ -160,6 +170,80 @@ function showPanel(panel) {
     endScreen.classList.toggle('hidden', panel !== 'end');
     loadingScreen.classList.toggle('hidden', panel !== 'loading');
     hud.classList.toggle('hidden', panel !== 'playing');
+}
+
+function applyInputMode() {
+    deviceState.mobileControls = deviceState.isTouchScreen && !deviceState.isChromebook;
+    document.body.classList.toggle('mobile-device', deviceState.mobileControls);
+    if (mobileControls) mobileControls.classList.toggle('hidden', !deviceState.mobileControls);
+    if (deviceState.mobileControls && controls && controls.isLocked) {
+        controls.unlock();
+    }
+}
+
+function setMoveState(action, value) {
+    switch (action) {
+        case 'forward': moveState.forward = value; break;
+        case 'backward': moveState.backward = value; break;
+        case 'left': moveState.left = value; break;
+        case 'right': moveState.right = value; break;
+        case 'sprint': moveState.sprint = value; break;
+        case 'crouch': moveState.crouch = value; break;
+        case 'crawl': moveState.crawl = value; break;
+        case 'jump': moveState.jump = value; break;
+    }
+}
+
+function attachMobileControls() {
+    if (!mobileControls) return;
+    const buttons = mobileControls.querySelectorAll('[data-action]');
+    buttons.forEach(button => {
+        const action = button.dataset.action;
+        const press = event => {
+            event.preventDefault();
+            setMoveState(action, true);
+        };
+        const release = event => {
+            if (action === 'sprint' || action === 'crouch' || action === 'crawl' || action === 'jump') {
+                setMoveState(action, false);
+            } else {
+                setMoveState(action, false);
+            }
+        };
+        button.addEventListener('touchstart', press, { passive: false });
+        button.addEventListener('touchend', release);
+        button.addEventListener('touchcancel', release);
+        button.addEventListener('mousedown', press);
+        button.addEventListener('mouseup', release);
+        button.addEventListener('mouseleave', release);
+    });
+
+    canvas.addEventListener('touchstart', event => {
+        if (!deviceState.mobileControls || event.touches.length !== 1) return;
+        deviceState.touchLookActive = true;
+        deviceState.lastTouchX = event.touches[0].pageX;
+        deviceState.lastTouchY = event.touches[0].pageY;
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', event => {
+        if (!deviceState.touchLookActive || event.touches.length !== 1) return;
+        event.preventDefault();
+        const touch = event.touches[0];
+        const dx = touch.pageX - deviceState.lastTouchX;
+        const dy = touch.pageY - deviceState.lastTouchY;
+        deviceState.lastTouchX = touch.pageX;
+        deviceState.lastTouchY = touch.pageY;
+
+        const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+        euler.y -= dx * 0.0024;
+        euler.x -= dy * 0.0024;
+        euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
+        camera.quaternion.setFromEuler(euler);
+    }, { passive: false });
+
+    const clearTouchLook = () => { deviceState.touchLookActive = false; };
+    canvas.addEventListener('touchend', clearTouchLook);
+    canvas.addEventListener('touchcancel', clearTouchLook);
 }
 
 function updateHud() {
@@ -975,6 +1059,9 @@ function bindEvents() {
     window.addEventListener('pointerdown', () => {
         if (!audioState.initialized) initAudio();
     }, { once: true });
+
+    applyInputMode();
+    attachMobileControls();
 }
 
 function createEnvironmentMap(pmremGenerator) {
