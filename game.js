@@ -170,6 +170,14 @@ function updateHud() {
     levelText.textContent = `Level: ${state.level}`;
 }
 
+function configureTexture(texture, useSRGB = true) {
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    texture.encoding = useSRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
+    texture.needsUpdate = true;
+    return texture;
+}
+
 function createNoiseTexture(width = 512, height = 512, base = '#161412') {
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -192,7 +200,7 @@ function createNoiseTexture(width = 512, height = 512, base = '#161412') {
         ctx.arc(Math.random() * width, Math.random() * height, radius, 0, Math.PI * 2);
         ctx.fill();
     }
-    return new THREE.CanvasTexture(canvas);
+    return configureTexture(new THREE.CanvasTexture(canvas), false);
 }
 
 function createRustTexture() {
@@ -208,7 +216,7 @@ function createRustTexture() {
         ctx.arc(Math.random() * size, Math.random() * size, Math.random() * 1.5 + 0.2, 0, Math.PI * 2);
         ctx.fill();
     }
-    return new THREE.CanvasTexture(canvas);
+    return configureTexture(new THREE.CanvasTexture(canvas));
 }
 
 function createFloorTexture(color) {
@@ -244,10 +252,8 @@ function createFloorTexture(color) {
     }
     ctx.globalAlpha = 1;
 
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    const texture = configureTexture(new THREE.CanvasTexture(canvas));
     texture.repeat.set(4.2, 4.2);
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return texture;
 }
 
@@ -269,10 +275,8 @@ function createBumpTexture(size = 512, strength = 0.8) {
         ctx.fill();
     }
 
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    const texture = configureTexture(new THREE.CanvasTexture(canvas), false);
     texture.repeat.set(2.6, 2.6);
-    texture.needsUpdate = true;
     return texture;
 }
 
@@ -305,11 +309,8 @@ function createWallTexture(base = '#1d1814') {
         ctx.stroke();
     }
 
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    const texture = configureTexture(new THREE.CanvasTexture(canvas));
     texture.repeat.set(3.25, 3.25);
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    texture.needsUpdate = true;
     return texture;
 }
 
@@ -359,18 +360,17 @@ function buildCorridor(levelIndex) {
         bumpScale: 0.05,
         roughness: 0.86,
         metalness: 0.08,
-        envMapIntensity: 0.16,
-        roughnessMap: createFloorTexture(`#${config.floorColor.toString(16)}`),
+        envMapIntensity: 0.18,
     });
     const wallMat = new THREE.MeshStandardMaterial({
         map: createWallTexture('#181414'),
         bumpMap: wallBump,
         bumpScale: 0.06,
-        roughness: 0.88,
-        metalness: 0.06,
+        roughness: 0.84,
+        metalness: 0.04,
         emissive: new THREE.Color(0x070605),
         emissiveIntensity: 0.12,
-        envMapIntensity: 0.12,
+        envMapIntensity: 0.18,
     });
     const ceilingMat = new THREE.MeshStandardMaterial({
         map: ceilingNoise,
@@ -422,7 +422,7 @@ function buildCorridor(levelIndex) {
         const lightBar = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.1, 0.7), new THREE.MeshStandardMaterial({
             color: 0xf4e2ca,
             emissive: 0xf7e7cf,
-            emissiveIntensity: 0.96,
+            emissiveIntensity: 0.54,
             roughness: 0.18,
             metalness: 0.18,
         }));
@@ -664,6 +664,8 @@ function setupLevel(levelIndex) {
     state.dead = false;
     state.effectStrength = 0;
     scene.fog = new THREE.Fog(levelConfig[levelIndex].fogColor, 6.8, 52);
+    scene.background = new THREE.Color(levelConfig[levelIndex].fogColor);
+    if (renderer) renderer.setClearColor(scene.background);
     document.body.style.backgroundColor = '#050403';
     playAmbientTone(levelIndex);
 }
@@ -975,17 +977,40 @@ function bindEvents() {
     }, { once: true });
 }
 
+function createEnvironmentMap(pmremGenerator) {
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    const gradient = ctx.createLinearGradient(0, 0, size, size);
+    gradient.addColorStop(0, '#6b5f52');
+    gradient.addColorStop(0.4, '#403b44');
+    gradient.addColorStop(1, '#070505');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.encoding = THREE.sRGBEncoding;
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+
+    const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+    texture.dispose();
+    return envMap;
+}
+
 function initScene() {
     scene.background = new THREE.Color(0x070506);
     scene.fog = new THREE.Fog(0x070506, 6.4, 48);
     camera.position.set(0, 1.65, 5.4);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.08);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.12);
     scene.add(ambient);
 
     const directional = new THREE.DirectionalLight(0xfff5d8, 0.18);
     directional.position.set(1.5, 9.2, 3.2);
     directional.castShadow = true;
+    directional.shadow.bias = -0.0015;
     directional.shadow.camera.near = 1;
     directional.shadow.camera.far = 70;
     directional.shadow.mapSize.set(2048, 2048);
@@ -997,6 +1022,11 @@ function initScene() {
     const backLight = new THREE.PointLight(0x3c2a24, 0.14, 68, 2);
     backLight.position.set(0, 3.5, 9);
     scene.add(backLight);
+
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+    scene.environment = createEnvironmentMap(pmremGenerator);
+    pmremGenerator.dispose();
 
     const environment = new THREE.Mesh(
         new THREE.CylinderGeometry(50, 50, 64, 24, 1, true),
@@ -1045,18 +1075,18 @@ function initPostProcessing() {
             }
             void main() {
                 vec2 uv = vUv;
-                float noise = rand(uv * time * 10.0);
-                uv.x += (noise - 0.5) * 0.0012;
+                float noise = rand(uv * time * 6.0);
+                uv.x += (noise - 0.5) * 0.00075;
                 vec3 color = texture2D(tDiffuse, uv).rgb;
-                float vignette = smoothstep(0.95, 0.3, distance(uv, vec2(0.5)));
+                float vignette = smoothstep(0.95, 0.35, distance(uv, vec2(0.5)));
                 vec3 shifted;
-                shifted.r = texture2D(tDiffuse, uv + vec2(0.0014, 0.0)).r;
+                shifted.r = texture2D(tDiffuse, uv + vec2(0.0009, 0.0)).r;
                 shifted.g = texture2D(tDiffuse, uv).g;
-                shifted.b = texture2D(tDiffuse, uv - vec2(0.0011, 0.0)).b;
-                vec3 finalColor = mix(color, shifted, 0.16);
-                finalColor *= 1.0 - vignette * 0.31;
-                finalColor = pow(finalColor, vec3(0.95));
-                float grain = rand(uv * time * 100.0) * 0.02;
+                shifted.b = texture2D(tDiffuse, uv - vec2(0.00085, 0.0)).b;
+                vec3 finalColor = mix(color, shifted, 0.08);
+                finalColor *= 1.0 - vignette * 0.22;
+                finalColor = pow(finalColor, vec3(1.02));
+                float grain = (rand(uv * time * 120.0) - 0.5) * 0.008;
                 finalColor += grain;
                 gl_FragColor = vec4(finalColor, 1.0);
             }

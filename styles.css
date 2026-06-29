@@ -94,11 +94,6 @@ button:hover {
   pointer-events: none;
   z-index: 4;
 }
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,0) 58%, rgba(0,0,0,0.4) 100%);
-}
 
 #horror-overlay::after {
   content: '';
