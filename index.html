@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Backrooms NoClip</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="overlay" class="screen">
+    <div class="panel" id="intro-screen">
+      <h1>Backrooms NoClip</h1>
+      <p>You and your friends enter an abandoned building. Lean on a wall and you may noclip into the Backrooms.</p>
+      <button id="lean-btn">Lean on the wall</button>
+      <p class="hint">Use WASD or arrow keys to move once the game starts.</p>
+    </div>
+    <div class="panel hidden" id="menu-screen">
+      <h1>Main Menu</h1>
+      <button id="start-btn">Start</button>
+      <button id="restart-btn">Restart</button>
+      <p class="small">A 0.001% chance may send you back to reality on level transition.</p>
+    </div>
+    <div class="panel hidden" id="end-screen">
+      <h1 id="end-title"></h1>
+      <p id="end-text"></p>
+      <button id="retry-btn">Play Again</button>
+    </div>
+  </div>
+
+  <div id="game-ui">
+    <div class="hud">
+      <span id="status-text">Waiting to enter...</span>
+      <span id="timer-text">Time: 0s</span>
+      <span id="level-text">Level: 0</span>
+    </div>
+    <canvas id="game-canvas" width="960" height="540"></canvas>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
