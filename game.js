@@ -1,6 +1,3 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js';
-import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/controls/PointerLockControls.js';
-
 const canvas = document.getElementById('game-canvas');
 const introScreen = document.getElementById('intro-screen');
 const cutsceneScreen = document.getElementById('cutscene-screen');
@@ -25,7 +22,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 
-const controls = new PointerLockControls(camera, document.body);
+const controls = new THREE.PointerLockControls(camera, document.body);
 const clock = new THREE.Clock();
 
 const audioState = {
